@@ -71,4 +71,13 @@ extension Subscribers.Completion {
             return .failure(error)
         }
     }
+
+    internal var isFailure: Bool {
+        switch self {
+        case .finished:
+            return false
+        case .failure:
+            return true
+        }
+    }
 }

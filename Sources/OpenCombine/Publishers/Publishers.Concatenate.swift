@@ -175,36 +175,38 @@ extension Publishers.Concatenate {
 
         func receive(_ input: Input) -> Subscribers.Demand {
             lock.lock()
+            guard upstream != nil else {
+                lock.unlock()
+                return .none
+            }
             demand -= 1
             lock.unlock()
             downstreamLock.lock()
             let newDemand = downstream.receive(input)
             downstreamLock.unlock()
-            lock.lock()
-            demand += newDemand
-            lock.unlock()
+            if newDemand != .none {
+                lock.lock()
+                demand += newDemand
+                lock.unlock()
+            }
             return newDemand
         }
 
         func receive(completion: Subscribers.Completion<Failure>) {
-            // Reading prefixFinished should be locked. Combine doesn't lock here.
-            if prefixFinished {
-                downstreamLock.lock()
-                downstream.receive(completion: completion)
-                downstreamLock.unlock()
-                return
-            }
-
-            guard case .finished = completion else {
-                downstreamLock.lock()
-                downstream.receive(completion: completion)
-                downstreamLock.unlock()
-                return
-            }
-
-            prefixFinished = true // Should be locked as well?
             lock.lock()
-            upstream = nil
+            precondition(upstream != nil)
+
+            if prefixFinished || completion.isFailure {
+                self.upstream = nil
+                lock.unlock()
+                downstreamLock.lock()
+                downstream.receive(completion: completion)
+                downstreamLock.unlock()
+                return
+            }
+
+            prefixFinished = true
+            self.upstream = nil
             lock.unlock()
             suffix.subscribe(self)
         }
